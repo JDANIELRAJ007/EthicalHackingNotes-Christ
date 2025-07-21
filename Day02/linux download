@@ -1,1 +1,45 @@
+Steps to Download and Install Kali Linux on Oracle VirtualBox
 
+Install Oracle VirtualBox:
+
+Go to: https://www.virtualbox.org/
+
+Click on "Downloads".
+
+Select your OS (Windows/Mac/Linux).
+
+Download and install VirtualBox.
+
+Download Kali Linux VirtualBox Image:
+
+Go to: https://www.kali.org/get-kali/#kali-virtual-machines
+
+Under "Virtual Machines", click on VirtualBox.
+
+Download the .7z file (e.g., kali-linux-*.7z).
+
+Extract the Downloaded File:
+
+Use 7-Zip or any file extractor to unzip the .7z file.
+
+You will get a folder containing a .vbox file and a .vdi file.
+
+Open Kali Linux in VirtualBox:
+
+Open Oracle VirtualBox.
+
+Click File > Import Appliance.
+
+Browse and select the .ova or .vbox file from the extracted folder.
+
+Click Next, then Import.
+
+Wait for the process to complete.
+
+Start Kali Linux:
+
+In VirtualBox, select Kali Linux VM.
+
+Click Start.
+
+Use the default username: kali and password: kali
