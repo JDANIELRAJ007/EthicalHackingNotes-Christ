@@ -1,0 +1,171 @@
+name: Update Fork Users List
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+  schedule:
+    # Run every Friday at 1:30 AM IST (which is 20:00 UTC the previous day)
+    - cron: '0 20 * * 4'
+    # Run every Tuesday at 1:30 AM IST (which is 20:00 UTC the previous day)
+    - cron: '0 20 * * 1'
+
+jobs:
+  update-fork-list:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch Fork Users and Update CSV
+        id: generate
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Get current timestamp in IST
+            const now = new Date();
+            const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
+            const istTime = new Date(now.getTime() + istOffset);
+            const lastUpdate = istTime.toISOString().replace('T', ' ').substring(0, 19) + ' IST';
+
+            console.log('Fetching forks...');
+            const allForks = await github.paginate(
+              github.rest.repos.listForks,
+              { owner, repo, per_page: 100 }
+            );
+
+            console.log(`Found ${allForks.length} forks`);
+
+            // Sort forks by creation date (oldest first - first fork to last fork)
+            allForks.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+            const csvRows = ['Profile Name,Username,Repo Count,EthicalHackingNotes-Christ Check'];
+            const mdRows = ['| Profile Name | Username | Repo Count | EthicalHackingNotes-Christ Check |', '|---|---|---|---|'];
+
+            for (const fork of allForks) {
+              try {
+                console.log(`Processing fork: ${fork.owner.login}`);
+                
+                // Get user's public repositories
+                const userRepos = await github.paginate(
+                  github.rest.repos.listForUser,
+                  { username: fork.owner.login, per_page: 100, type: 'public' }
+                );
+
+                const repoCount = userRepos.length;
+                
+                // Check if user has EthicalHackingNotes-Christ repo
+                const hasEthicalHackingRepo = userRepos.some(repo => 
+                  repo.name === 'EthicalHackingNotes-Christ'
+                );
+
+                const profileName = fork.owner.name || fork.owner.login;
+                const username = fork.owner.login;
+                const usernameWithLink = `https://github.com/${username}`;
+                const ethicalHackingCheck = hasEthicalHackingRepo ? 'PASS' : 'FAIL';
+
+                csvRows.push(`"${profileName}","${usernameWithLink}",${repoCount},"${ethicalHackingCheck}"`);
+                mdRows.push(`| ${profileName} | [${username}](${usernameWithLink}) | ${repoCount} | ${ethicalHackingCheck} |`);
+                
+                // Add a small delay to avoid hitting rate limits
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+              } catch (error) {
+                console.error(`Error processing ${fork.owner.login}:`, error);
+                // Add entry with error indicator
+                const profileName = fork.owner.name || fork.owner.login;
+                const username = fork.owner.login;
+                const usernameWithLink = `https://github.com/${username}`;
+                csvRows.push(`"${profileName}","${usernameWithLink}","Error","Error"`);
+                mdRows.push(`| ${profileName} | [${username}](${usernameWithLink}) | Error | Error |`);
+              }
+            }
+
+            const csvContent = csvRows.join('\n');
+            const mdContent = mdRows.join('\n');
+            
+            // Ensure .repo directory exists
+            if (!fs.existsSync('.repo')) {
+              fs.mkdirSync('.repo', { recursive: true });
+            }
+            
+            fs.writeFileSync('.repo/fork-users.csv', csvContent);
+            fs.writeFileSync('.repo/fork-users.md', mdContent);
+
+            // Calculate PASS/FAIL statistics
+            const passCount = csvRows.slice(1).filter(row => row.includes('"PASS"')).length;
+            const failCount = csvRows.slice(1).filter(row => row.includes('"FAIL"')).length;
+            const errorCount = csvRows.slice(1).filter(row => row.includes('"Error"')).length;
+            const totalEntries = passCount + failCount + errorCount;
+            
+            const passPercentage = totalEntries > 0 ? ((passCount / totalEntries) * 100).toFixed(1) : '0.0';
+            const failPercentage = totalEntries > 0 ? ((failCount / totalEntries) * 100).toFixed(1) : '0.0';
+            const errorPercentage = totalEntries > 0 ? ((errorCount / totalEntries) * 100).toFixed(1) : '0.0';
+
+            // Also create a summary markdown file
+            const summaryContent = [
+              '# Fork Users Data',
+              '',
+              `**Total Forks:** ${allForks.length}`,
+              `**Report Generated:** ${lastUpdate}`,
+              '',
+              '## Summary Statistics',
+              '',
+              '| Status | Count | Percentage |',
+              '|--------|-------|------------|',
+              `| PASS   | ${passCount}     | ${passPercentage}%       |`,
+              `| FAIL   | ${failCount}    | ${failPercentage}%      |`,
+              errorCount > 0 ? `| ERROR  | ${errorCount}     | ${errorPercentage}%       |` : null,
+              `| **Total** | **${totalEntries}** | **100%** |`,
+              '',
+              '## Data Files',
+              '- **CSV Format**: `fork-users.csv` - Machine readable format',
+              '- **Markdown Format**: `fork-users.md` - Human readable table format with clickable links',
+              '',
+              '## Data Structure',
+              '- **Profile Name**: User\'s display name or GitHub username',
+              '- **Username**: GitHub profile link (clickable in markdown format)',
+              '- **Repo Count**: Total number of public repositories',
+              '- **EthicalHackingNotes-Christ Check**: PASS if user has this specific repo, FAIL if not',
+              '',
+              '## Sorting Order',
+              'Users are sorted chronologically by fork creation date:',
+              '- **First user to fork** appears at the top',
+              '- **Last user to fork** appears at the bottom',
+              '',
+              '## Usage',
+              '- Use the **CSV file** for data analysis, spreadsheet imports, or automated processing',
+              '- Use the **Markdown file** for easy browsing with clickable GitHub profile links',
+              '',
+              '## Repository Check',
+              'The `EthicalHackingNotes-Christ` column helps identify users who have created or forked the specific repository of interest.'
+            ].filter(line => line !== null).join('\n');
+
+            fs.writeFileSync('.repo/README.md', summaryContent);
+
+      - name: Check for changes in .repo directory
+        id: check_changes
+        run: |
+          git add .repo/
+          if git diff --staged --quiet; then
+            echo "No changes detected"
+          else
+            echo "changes_detected=true" >> $GITHUB_ENV
+          fi
+
+      - name: Commit and Push Changes if Fork List Updated
+        if: env.changes_detected == 'true'
+        run: |
+          git config user.name "GitHub Action Bot"
+          git config user.email "action@github.com"
+          git add .repo/
+          git commit -m "Update fork users data - $(date '+%Y-%m-%d %H:%M:%S IST')"
+          git push
